@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-runner"
+version = "0.1.0"
+description = "Lightweight Codex worker/judge supervisor with finish criteria gates"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "David Strejc" }
+]
+
+[project.scripts]
+codex-runner = "codex_runner.cli:main"
+
+[tool.setuptools]
+packages = ["codex_runner"]
