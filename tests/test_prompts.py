@@ -64,13 +64,15 @@ class PromptTests(unittest.TestCase):
 
 
     def test_interactive_worker_standby_prompt_waits_for_user(self) -> None:
-        prompt = _build_interactive_worker_standby_prompt()
+        from pathlib import Path
+        prompt = _build_interactive_worker_standby_prompt(activation_path=Path("/tmp/worker-activated.txt"))
         self.assertIn("Wait for direct user instructions", prompt)
         self.assertIn("Do not start working yet", prompt)
+        self.assertIn("/tmp/worker-activated.txt", prompt)
 
     def test_interactive_judge_standby_prompt_waits_for_requests(self) -> None:
         prompt = _build_interactive_judge_standby_prompt()
-        self.assertIn("Wait for injected evaluation requests", prompt)
+        self.assertIn("Automatic watcher evaluations run in a separate isolated judge subprocess", prompt)
         self.assertIn("Do not start evaluating anything yet", prompt)
 
 

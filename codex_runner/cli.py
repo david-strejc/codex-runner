@@ -35,6 +35,9 @@ def _parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--no-attach", action="store_true", help="Do not attach or switch to the new tmux session")
     run_parser.add_argument("--idle-seconds", type=int, default=8)
     run_parser.add_argument("--poll-seconds", type=int, default=3)
+    run_parser.add_argument("--no-shower", action="store_true", help="Disable automatic worker reboot handoffs in interactive mode")
+    run_parser.add_argument("--shower-interval", type=int, default=5, help="Reboot the worker after this many interactive judge cycles (default: 5)")
+    run_parser.add_argument("--shower-timeout-seconds", type=int, default=180, help="How long to wait for the worker handoff summary before forcing a reboot (default: 180)")
 
     status_parser = subparsers.add_parser("status", help="Print the last runner state")
     status_parser.add_argument("repo", nargs="?", type=Path, default=Path("."))
@@ -57,6 +60,9 @@ def _parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--dangerous", action="store_true")
     watch_parser.add_argument("--idle-seconds", type=int, default=8)
     watch_parser.add_argument("--poll-seconds", type=int, default=3)
+    watch_parser.add_argument("--shower-enabled", action="store_true")
+    watch_parser.add_argument("--shower-interval", type=int, default=5)
+    watch_parser.add_argument("--shower-timeout-seconds", type=int, default=180)
 
     return parser
 
@@ -107,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
             attach=attach,
             idle_seconds=args.idle_seconds,
             poll_seconds=args.poll_seconds,
+            shower_enabled=not args.no_shower,
+            shower_interval=args.shower_interval,
+            shower_timeout_seconds=args.shower_timeout_seconds,
         )
         return runner.start()
 
@@ -134,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
             bypass_approvals_and_sandbox=args.dangerous,
             idle_seconds=args.idle_seconds,
             poll_seconds=args.poll_seconds,
+            shower_enabled=args.shower_enabled,
+            shower_interval=args.shower_interval,
+            shower_timeout_seconds=args.shower_timeout_seconds,
         )
         return watcher.run()
 

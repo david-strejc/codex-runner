@@ -25,22 +25,23 @@ codex-runner uses a **dual-agent architecture** inside tmux:
 │         ┌──── WATCHER (background) ────┐     │
 │         │ Monitors worker idle state   │     │
 │         │ Runs deterministic checks    │     │
-│         │ Injects judge evaluations    │     │
+│         │ Runs isolated auto-judge     │     │
 │         │ Pushes worker when not done  │     │
 │         └──────────────────────────────┘     │
 └─────────────────────────────────────────────┘
 ```
 
 1. The **worker** does the actual coding work in an interactive Codex session
-2. A background **watcher** monitors the worker pane for idle state (no output for N seconds)
+2. A background **watcher** process monitors the worker pane for idle state (no output for N seconds)
 3. When the worker appears idle, the watcher runs **deterministic checks** against finish criteria
-4. The watcher injects an evaluation request into the **judge** session
-5. The judge decides: `continue`, `complete`, or `blocked`
-6. If `continue`, the watcher sends the judge's instructions back to the worker
-7. If `complete` AND all deterministic gates pass, the task is done
-8. The judge's `complete` is overridden if deterministic gates still fail
+4. The watcher launches an isolated one-off **auto-judge** Codex subprocess for the completion decision
+5. The auto-judge decides: `continue`, `complete`, or `blocked`
+6. If `continue`, the watcher sends the auto-judge's instructions back to the worker
+7. In interactive mode, **shower mode** is enabled by default: after every 5 watcher cycles, the watcher forces the worker to write a handoff summary, then reboots the worker pane into a fresh Codex session seeded with that handoff
+8. If `complete` AND all deterministic gates pass, the task is done
+9. The auto-judge's `complete` is overridden if deterministic gates still fail
 
-Both the worker and judge are full interactive Codex sessions -- you can talk to either pane normally.
+Both visible panes are still normal interactive Codex sessions. You can talk to the worker and the judge normally. Automatic watcher evaluations do **not** depend on the interactive judge pane, so user messages there cannot derail the completion loop.
 
 ## Completion Gates
 
@@ -118,6 +119,9 @@ codex-runner stop [repo]                    # Terminate runner panes/window
 | `--no-attach` | Start session but don't switch/attach to it |
 | `--idle-seconds N` | Worker idle time before judge evaluates (default: 8) |
 | `--poll-seconds N` | Watcher polling interval (default: 3) |
+| `--no-shower` | Disable automatic worker reboot handoffs in interactive mode |
+| `--shower-interval N` | Reboot the worker after this many interactive judge cycles (default: 5) |
+| `--shower-timeout-seconds N` | How long to wait for the worker handoff summary before forcing the reboot (default: 180) |
 | `--worker-model MODEL` | Override Codex model for worker |
 | `--judge-model MODEL` | Override Codex model for judge |
 | `--safe` | Don't pass `--dangerously-bypass-approvals-and-sandbox` |
@@ -177,7 +181,7 @@ The finish criteria file contains a fenced JSON block that the runner parses:
 
 ## Interactive vs Batch Mode
 
-**Interactive (default):** Both worker and judge run as normal interactive Codex sessions. You can talk to either pane. The background watcher handles the evaluation loop automatically. The worker starts in standby if no `--task` is given.
+**Interactive (default):** Both worker and judge run as normal interactive Codex sessions. You can talk to either pane. A small background watcher process handles the evaluation loop automatically, using an isolated non-interactive auto-judge subprocess so human interaction with the judge pane stays safe. Shower mode is enabled by default and reboots the worker into a fresh session after every 5 watcher cycles using a forced handoff summary. The worker starts in standby if no `--task` is given.
 
 **Batch (`--batch`):** The old non-interactive loop. Uses `codex exec` and `codex exec resume`. The worker runs, produces structured JSON output, the judge evaluates it, and the loop repeats up to `--max-rounds` times. No human interaction during rounds.
 

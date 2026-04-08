@@ -47,13 +47,27 @@ class FinishContract:
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "FinishContract":
         verify_commands: list[VerifyCommand] = []
-        for raw in payload.get("verify_commands", []):
+        for index, raw in enumerate(payload.get("verify_commands", []), start=1):
+            if isinstance(raw, str):
+                command = raw.strip()
+                if not command:
+                    raise ContractError("verify_commands string entries must be non-empty")
+                verify_commands.append(
+                    VerifyCommand(
+                        id=f"verify-{index}",
+                        command=command,
+                    )
+                )
+                continue
             if not isinstance(raw, dict):
-                raise ContractError("verify_commands entries must be objects")
+                raise ContractError("verify_commands entries must be objects or strings")
+            command = str(raw.get("command", "")).strip()
+            if not command:
+                raise ContractError("verify_commands object entries must contain a non-empty command")
             verify_commands.append(
                 VerifyCommand(
-                    id=str(raw.get("id", "")).strip() or "verify",
-                    command=str(raw.get("command", "")).strip(),
+                    id=str(raw.get("id", "")).strip() or f"verify-{index}",
+                    command=command,
                     required=bool(raw.get("required", True)),
                     timeout_seconds=int(raw.get("timeout_seconds", 900)),
                 )

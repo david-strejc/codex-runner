@@ -20,9 +20,10 @@ class TmuxError(RuntimeError):
 
 
 class TmuxSession:
-    def __init__(self, session_name: str, *, tmux_bin: str = "tmux") -> None:
+    def __init__(self, session_name: str, *, tmux_bin: str = "tmux", remain_on_exit: str = "on") -> None:
         self.session_name = session_name
         self.tmux_bin = tmux_bin
+        self.remain_on_exit = remain_on_exit
 
     def _window_name(self) -> str:
         suffix = self.session_name[-18:] if len(self.session_name) > 18 else self.session_name
@@ -57,7 +58,7 @@ class TmuxSession:
             session_name = self.session_name
 
         self._run("split-window", "-h", "-t", window_target)
-        self._run("set-window-option", "-t", window_target, "remain-on-exit", "on")
+        self._run("set-window-option", "-t", window_target, "remain-on-exit", self.remain_on_exit)
         panes = self._run("list-panes", "-t", window_target, "-F", "#{pane_index} #{pane_id}", capture=True).stdout.splitlines()
         pane_map: dict[str, str] = {}
         for line in panes:
