@@ -102,7 +102,7 @@ class InteractiveWatcherTests(unittest.TestCase):
             ensure_mock.assert_called_once()
             watcher.tmux.send_keys.assert_called_once()
 
-    def test_run_resets_to_standby_after_successful_completion(self) -> None:
+    def test_run_keeps_worker_session_after_successful_completion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             init_plan(repo, "Finish the repo")
@@ -185,9 +185,9 @@ class InteractiveWatcherTests(unittest.TestCase):
 
             saved = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["status"], "running")
-            self.assertTrue(saved["standby"])
+            self.assertFalse(saved.get("standby", False))
             self.assertIsNone(saved["worker_session_id"])
-            watcher.tmux.run_script.assert_called_once()
+            watcher.tmux.run_script.assert_not_called()
             watcher.tmux.kill.assert_not_called()
 
     def test_should_shower_only_on_configured_continue_rounds(self) -> None:

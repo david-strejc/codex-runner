@@ -1790,17 +1790,16 @@ class JudgeWatcher:
                         )
                     )
                     if decision.decision == "complete" and deterministic_report.passed:
-                        self._reset_worker_to_standby(state)
-                        state.started_without_task = True
-                        state.startup_turn_consumed = False
+                        state.status = "running"
                         self._save_state(state)
                         self._log_watcher_event(
                             "judge_complete_nonterminal",
                             round_number=state.current_round,
                             decision=asdict(decision),
-                            started_without_task=state.started_without_task,
+                            worker_session_id=state.worker_session_id,
+                            worker_pane=self.worker_pane,
                         )
-                        print("judge: completion approved -> worker reset to standby")
+                        print("judge: completion approved")
                         continue
                     if decision.decision == "blocked":
                         state.status = "blocked"
