@@ -495,6 +495,11 @@ Required action:
 - Write a concise but complete handoff summary to `{handoff_path}` right now.
 - Use a shell command to write the file.
 - After the file is written, stop and wait. Do not continue implementing work in this old session.
+- Prefer a single write command such as:
+  `cat > {handoff_path} <<'EOF'`
+  `...summary here...`
+  `EOF`
+- Do not only answer in chat. The file at `{handoff_path}` is the contract.
 
 The handoff summary must include:
 - task status
@@ -663,6 +668,7 @@ def _build_rebooted_worker_prompt(
     finish_contract_markdown: str,
     todo_markdown: str,
     handoff_summary: str,
+    latest_judge_instructions: str,
 ) -> str:
     return f"""You are the interactive worker in a fresh rebooted session.
 
@@ -687,6 +693,9 @@ Current TODO:
 
 Worker handoff summary:
 {handoff_summary}
+
+Latest judge instructions before shower:
+{latest_judge_instructions or "Continue working."}
 """
 
 
@@ -1614,6 +1623,26 @@ class JudgeWatcher:
             time.sleep(0.5)
         return False
 
+    def _wait_for_worker_handoff(
+        self,
+        path: Path,
+        *,
+        timeout_seconds: int,
+        start_offset: int,
+    ) -> tuple[bool, bool]:
+        deadline = time.time() + timeout_seconds
+        saw_turn_complete = False
+        offset = start_offset
+        while time.time() < deadline:
+            if path.exists() and path.read_text(encoding="utf-8", errors="replace").strip():
+                return True, saw_turn_complete
+            offset, worker_events = self._read_worker_turn_events_since(offset)
+            if worker_events:
+                saw_turn_complete = True
+                return False, True
+            time.sleep(0.5)
+        return False, saw_turn_complete
+
     def _fallback_handoff_summary(self, *, pane_text: str, instructions: str) -> str:
         tail = pane_text[-4000:].strip() or "(worker pane was empty)"
         return (
@@ -1622,7 +1651,13 @@ class JudgeWatcher:
             f"Recent worker pane tail:\n{tail}\n"
         )
 
-    def _restart_worker_from_handoff(self, *, handoff_summary: str, state: RunnerState) -> None:
+    def _restart_worker_from_handoff(
+        self,
+        *,
+        handoff_summary: str,
+        latest_judge_instructions: str,
+        state: RunnerState,
+    ) -> None:
         todo_markdown = self.plan_dir.joinpath("TODO.md").read_text(encoding="utf-8") if self.plan_dir.joinpath("TODO.md").exists() else "# TODO\n"
         contract, finish_markdown = _ensure_plan_files(self.repo_root, None)
         prompt = _build_rebooted_worker_prompt(
@@ -1630,6 +1665,7 @@ class JudgeWatcher:
             finish_contract_markdown=finish_markdown,
             todo_markdown=todo_markdown,
             handoff_summary=handoff_summary,
+            latest_judge_instructions=latest_judge_instructions,
         )
         script_path = self.logs_dir / f"reboot-worker-{int(time.time())}.sh"
         script_path.write_text(
@@ -1665,6 +1701,11 @@ class JudgeWatcher:
             latest_judge_instructions=instructions,
         )
         request_path.write_text(request, encoding="utf-8")
+        inject_text = (
+            f"Read {request_path} and follow it now. "
+            f"Write the handoff summary to {handoff_path}. "
+            "After the file is written, stop and wait."
+        )
         self._log_watcher_event(
             "worker_shower_started",
             round_number=round_number,
@@ -1674,10 +1715,18 @@ class JudgeWatcher:
         )
 
         if current_command.lower() not in SHELL_COMMANDS:
-            self.tmux.send_keys(self.worker_pane, request, press_enter=True)
-            wrote_handoff = self._wait_for_file(handoff_path, timeout_seconds=self.shower_timeout_seconds)
+            start_offset = len(
+                self._worker_turn_events_path().read_text(encoding="utf-8", errors="replace").splitlines()
+            ) if self._worker_turn_events_path().exists() else 0
+            self.tmux.send_keys(self.worker_pane, inject_text, press_enter=True)
+            wrote_handoff, saw_turn_complete = self._wait_for_worker_handoff(
+                handoff_path,
+                timeout_seconds=self.shower_timeout_seconds,
+                start_offset=start_offset,
+            )
         else:
             wrote_handoff = False
+            saw_turn_complete = False
 
         handoff_summary = (
             handoff_path.read_text(encoding="utf-8", errors="replace").strip()
@@ -1689,8 +1738,13 @@ class JudgeWatcher:
                 "worker_shower_fallback",
                 round_number=round_number,
                 handoff_path=str(handoff_path),
+                saw_turn_complete=saw_turn_complete,
             )
-        self._restart_worker_from_handoff(handoff_summary=handoff_summary, state=state)
+        self._restart_worker_from_handoff(
+            handoff_summary=handoff_summary,
+            latest_judge_instructions=instructions,
+            state=state,
+        )
         self._log_watcher_event(
             "worker_shower_completed",
             round_number=round_number,

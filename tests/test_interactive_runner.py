@@ -276,9 +276,9 @@ class InteractiveWatcherTests(unittest.TestCase):
             state = type("State", (), {"worker_session_id": "abc", "worker_reboots": 0})()
 
             def fake_send_keys(_pane: str, text: str, *, press_enter: bool = True) -> None:
-                marker = "Write a concise but complete handoff summary to `"
+                marker = "Write the handoff summary to "
                 start = text.index(marker) + len(marker)
-                end = text.index("` right now.", start)
+                end = text.index(". After the file is written, stop and wait.", start)
                 handoff_path = Path(text[start:end])
                 handoff_path.write_text("summary from worker", encoding="utf-8")
 
@@ -295,6 +295,55 @@ class InteractiveWatcherTests(unittest.TestCase):
             self.assertEqual(summary, "summary from worker")
             self.assertEqual(state.worker_session_id, None)
             self.assertEqual(state.worker_reboots, 1)
+            watcher.tmux.run_script.assert_called_once()
+            watcher.tmux.pipe_pane.assert_called_once()
+
+    def test_perform_shower_falls_back_after_turn_complete_without_handoff_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            init_plan(repo, "Finish the repo")
+            watcher = JudgeWatcher(
+                repo,
+                session_name="demo",
+                worker_pane="%1",
+                judge_pane="%2",
+                codex_bin="codex",
+                tmux_bin="tmux",
+                judge_model=None,
+                judge_sandbox="danger-full-access",
+                judge_approval_policy="never",
+                worker_model=None,
+                worker_sandbox="danger-full-access",
+                worker_approval_policy="never",
+                bypass_approvals_and_sandbox=False,
+                idle_seconds=1,
+                poll_seconds=1,
+                shower_enabled=True,
+                shower_interval=5,
+                shower_timeout_seconds=30,
+            )
+            watcher.logs_dir.mkdir(parents=True, exist_ok=True)
+            watcher.tmux = Mock()
+            state = type("State", (), {"worker_session_id": "abc", "worker_reboots": 0})()
+            watcher._worker_turn_events_path().write_text("", encoding="utf-8")
+
+            with patch.object(
+                watcher,
+                "_wait_for_worker_handoff",
+                return_value=(False, True),
+            ) as wait_mock:
+                summary = watcher._perform_shower(
+                    state=state,
+                    current_command="codex",
+                    pane_text="old pane text",
+                    instructions="keep going",
+                    round_number=5,
+                )
+
+            self.assertIn("Fallback handoff summary", summary)
+            self.assertEqual(state.worker_session_id, None)
+            self.assertEqual(state.worker_reboots, 1)
+            wait_mock.assert_called_once()
             watcher.tmux.run_script.assert_called_once()
             watcher.tmux.pipe_pane.assert_called_once()
 
